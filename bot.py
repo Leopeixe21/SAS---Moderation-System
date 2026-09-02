@@ -157,7 +157,7 @@ async def moderate(
         dm_embed = discord.Embed(
             title="⌛ Timeout aplicado",
             description=f"Você recebeu um timeout no servidor **{discord.utils.escape_markdown(message.guild.name)}**.",
-            colour=discord.Colour.green(),
+            colour=discord.Colour.orange(),
             timestamp=discord.utils.utcnow(),
         )
         day_label = "Dia" if TIMEOUT_DAYS == 1 else "Dias"
@@ -230,7 +230,7 @@ async def notify_manual_timeout(member: discord.Member, reason: str, duration: s
     embed = discord.Embed(
         title="⌛ Timeout aplicado",
         description=f"Você recebeu um timeout no servidor **{discord.utils.escape_markdown(member.guild.name)}**.",
-        colour=discord.Colour.green(),
+        colour=discord.Colour.orange(),
         timestamp=discord.utils.utcnow(),
     )
     embed.add_field(name="Duração", value=f"`{duration}`", inline=False)

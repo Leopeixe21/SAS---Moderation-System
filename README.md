@@ -68,7 +68,7 @@ Envie exemplos num canal de testes e confira os registros. Quando estiver satisf
 ## Ajustes e limites
 
 - `DETECTION_THRESHOLD=6`: aumente para reduzir falsos positivos; diminua para aumentar a sensibilidade.
-- `TIMEOUT_DAYS=1`: duração da punição (o Discord aceita no máximo 28 dias). O SAS envia uma DM verde com a prova após aplicar o timeout por hacking e outra DM verde quando ele expira ou é removido. Timeouts manuais geram uma DM verde sem revelar o moderador e sem prova; o canal de logs recebe o moderador e uma prova visual reconstruída com as últimas 20 mensagens acessíveis do usuário. Usuários podem bloquear DMs do servidor.
+- `TIMEOUT_DAYS=1`: duração da punição (o Discord aceita no máximo 28 dias). O SAS envia uma DM laranja com a prova após aplicar o timeout por hacking e uma DM verde quando ele expira ou é removido. Timeouts manuais geram uma DM laranja sem revelar o moderador e sem prova; o canal de logs recebe o moderador e uma prova visual reconstruída com as últimas 20 mensagens acessíveis do usuário. Usuários podem bloquear DMs do servidor.
 - `MAX_IMAGE_BYTES`: imagens maiores são ignoradas para controlar memória/CPU.
 - As quatro imagens em `references/` são somente referências visuais. Texto encontrado dentro delas nunca é tratado como instrução.
 
