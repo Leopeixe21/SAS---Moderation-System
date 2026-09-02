@@ -5,6 +5,7 @@ import io
 import logging
 import math
 import os
+import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -148,14 +149,22 @@ async def moderate(
         errors.append(f"falha ao apagar: {exc}")
     timeout_applied = False
     timeout_key = (member.guild.id, member.id)
-    sas_timeout_targets[timeout_key] = discord.utils.utcnow() + timedelta(days=TIMEOUT_DAYS)
+    expected_timeout_until = discord.utils.utcnow() + timedelta(days=TIMEOUT_DAYS)
+    sas_timeout_targets[timeout_key] = expected_timeout_until
     try:
         await member.timeout(timedelta(days=TIMEOUT_DAYS), reason="Discord hackeado — imagem de golpe detectada")
         timeout_applied = True
-        timeout_store.save(member.guild.id, member.id, sas_timeout_targets[timeout_key], "sas")
     except (discord.Forbidden, discord.HTTPException) as exc:
         sas_timeout_targets.pop(timeout_key, None)
         errors.append(f"falha no timeout: {exc}")
+
+    if timeout_applied:
+        try:
+            # Usa a cópia local: on_member_update pode consumir a entrada do dicionário durante o await acima.
+            timeout_store.save(member.guild.id, member.id, expected_timeout_until, "sas")
+        except sqlite3.Error as exc:
+            errors.append(f"falha ao salvar o timeout: {exc}")
+            log.exception("Falha ao persistir o timeout SAS de %s", member.id)
 
     if timeout_applied:
         dm_filename = f"prova-mensagem-{message.id}.png"
@@ -368,7 +377,11 @@ def schedule_timeout_expiry(member: discord.Member, source: str = "manual") -> N
         return
 
     key = (member.guild.id, member.id)
-    timeout_store.save(member.guild.id, member.id, until, source)
+    try:
+        timeout_store.save(member.guild.id, member.id, until, source)
+    except sqlite3.Error:
+        # O agendamento e os avisos continuam mesmo se o arquivo do banco estiver temporariamente indisponível.
+        log.exception("Falha ao persistir o agendamento de timeout de %s", member.id)
     previous = timeout_tasks.pop(key, None)
     if previous and previous is not asyncio.current_task():
         previous.cancel()
