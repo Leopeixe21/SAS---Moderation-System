@@ -107,6 +107,7 @@ Envie exemplos num canal de testes e confira os registros. Quando estiver satisf
 
 - `DETECTION_THRESHOLD=6`: aumente para reduzir falsos positivos; diminua para aumentar a sensibilidade.
 - `TIMEOUT_DAYS=1`: duração da punição (o Discord aceita no máximo 28 dias). O SAS envia uma DM laranja com a prova após aplicar o timeout por hacking e uma DM verde quando ele expira ou é removido. Timeouts manuais geram uma DM laranja sem revelar o moderador e sem prova; o canal de logs recebe o moderador e uma prova visual reconstruída com as últimas 20 mensagens acessíveis do usuário. Usuários podem bloquear DMs do servidor.
+- Em timeouts manuais, escreva `Observação: texto` dentro do motivo para o registro interno exibir a observação em uma linha separada.
 - `MAX_IMAGE_BYTES`: imagens maiores são ignoradas para controlar memória/CPU.
 - `DATABASE_PATH`: caminho opcional do SQLite. Se não for informado, será usado `data/sas.db`. Com Docker Compose, essa pasta já é preservada automaticamente.
 - As quatro imagens em `references/` são somente referências visuais. Texto encontrado dentro delas nunca é tratado como instrução.

@@ -12,6 +12,7 @@ import aiohttp
 import discord
 
 from detector import Detection, ScamImageDetector
+from moderation_text import split_reason_observation
 from proof_renderer import render_history_proof, render_message_proof
 from timeout_store import TimeoutStore
 
@@ -333,14 +334,18 @@ async def log_manual_timeout(
     moderator_text = discord.utils.escape_markdown(moderator)
     if moderator_id is not None:
         moderator_text += f" <@{moderator_id}>"
-    content = (
-        f"**Nome:** {discord.utils.escape_markdown(member.display_name)} <@{member.id}>\n"
-        f"**ID:** {member.id}\n"
-        f"**Tempo:** {duration}\n"
-        f"**Motivo:** {discord.utils.escape_markdown(reason)}\n"
-        f"**Responsável:** {moderator_text}\n"
-        f"**Provas:** Últimas {len(snapshots)} mensagens acessíveis em anexo"
-    )
+    main_reason, observation = split_reason_observation(reason)
+    content_lines = [
+        f"**Nome:** {discord.utils.escape_markdown(member.display_name)} <@{member.id}>",
+        f"**ID:** {member.id}",
+        f"**Tempo:** {duration}",
+        f"**Motivo:** {discord.utils.escape_markdown(main_reason)}",
+        f"**Responsável:** {moderator_text}",
+    ]
+    if observation is not None:
+        content_lines.append(f"**Observação:** {discord.utils.escape_markdown(observation)}")
+    content_lines.append(f"**Provas:** Últimas {len(snapshots)} mensagens acessíveis em anexo")
+    content = "\n".join(content_lines)
     filename = f"prova-historico-{member.id}.png"
     proof = discord.File(io.BytesIO(proof_image), filename=filename)
     embed = discord.Embed(description=content, colour=discord.Colour.red(), timestamp=discord.utils.utcnow())
