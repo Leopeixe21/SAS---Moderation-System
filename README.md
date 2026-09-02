@@ -6,6 +6,42 @@ SAS é um bot que reconhece screenshots do golpe falso de “MrBeast”, usando 
 
 Na primeira inicialização, o SAS cria automaticamente o banco SQLite em `data/sas.db`. Não é necessário instalar ou configurar um servidor de banco de dados. Os timeouts pendentes ficam salvos e são recuperados depois de uma reinicialização; se um deles terminar enquanto o bot estiver desligado, o aviso será enviado quando o bot voltar.
 
+## ⚠️ Requisitos obrigatórios na máquina
+
+Escolha **somente uma** das opções abaixo. Não é necessário instalar Python quando for usar Docker.
+
+### Opção A — Python local
+
+- **Python 3.12 de 64 bits**, com `pip` incluído;
+- conexão com a internet durante a instalação e enquanto o bot estiver ligado;
+- acesso de saída a `discord.com` e à CDN do Discord;
+- as dependências de [`requirements.txt`](requirements.txt), que incluem Discord.py, RapidOCR/ONNX, Pillow, NumPy e ImageHash.
+
+Depois de baixar o projeto, execute no PowerShell dentro da pasta do SAS:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python bot.py
+```
+
+### Opção B — Docker
+
+- **Docker Desktop** no Windows/macOS; ou Docker Engine com o plugin **Docker Compose** no Linux;
+- conexão com a internet para construir a imagem e acessar o Discord.
+
+Depois de preencher o `.env`, execute:
+
+```powershell
+docker compose up -d --build
+```
+
+> **Não instale SQLite, Tesseract ou outro servidor de banco de dados.** O SQLite já acompanha o Python, o OCR usado é o RapidOCR e todas as bibliotecas Python são instaladas pelo `requirements.txt` ou pela imagem Docker. O Git só é necessário para clonar/atualizar o projeto; quem baixar o ZIP não precisa dele.
+
+Além dos programas na máquina, as funções de moderação exigem os dois intents e as permissões do Discord descritos na seção **Configuração no Discord**. Sem eles, o bot pode ficar online, mas não conseguirá ler imagens, observar timeouts, apagar mensagens ou aplicar punições.
+
 ## Onde colocar o token e as outras informações
 
 O arquivo correto é o **`.env`**, dentro da mesma pasta que `bot.py`. Ele não existe inicialmente para evitar que um token real seja distribuído por acidente.
@@ -55,7 +91,7 @@ Depois de preencher `.env`, mantenha `DRY_RUN=true` no início:
 
 ```powershell
 docker build -t sas-moderation .
-docker run --rm --env-file .env sas-moderation
+docker run --rm --env-file .env -v "${PWD}/data:/app/data" sas-moderation
 ```
 
 Ou mantenha o serviço reiniciando automaticamente com Compose:
