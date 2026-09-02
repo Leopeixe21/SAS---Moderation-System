@@ -330,13 +330,13 @@ async def log_manual_timeout(
 
     moderator_text = discord.utils.escape_markdown(moderator)
     if moderator_id is not None:
-        moderator_text += f" (`{moderator_id}`)"
+        moderator_text += f" <@{moderator_id}>"
     content = (
         f"**Nome:** {discord.utils.escape_markdown(member.display_name)} <@{member.id}>\n"
         f"**ID:** {member.id}\n"
         f"**Tempo:** {duration}\n"
         f"**Motivo:** {discord.utils.escape_markdown(reason)}\n"
-        f"**Aplicado por:** {moderator_text}\n"
+        f"**Responsável:** {moderator_text}\n"
         f"**Provas:** Últimas {len(snapshots)} mensagens acessíveis em anexo"
     )
     filename = f"prova-historico-{member.id}.png"
