@@ -1,0 +1,7 @@
+services:
+  sas:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+

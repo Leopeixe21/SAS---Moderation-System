@@ -1,0 +1,27 @@
+name: Verificar projeto
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verificar sintaxe
+        run: python -m compileall -q bot.py detector.py proof_renderer.py
+
+      - name: Validar imagem Docker
+        run: docker build -t sas-moderation:test .
+

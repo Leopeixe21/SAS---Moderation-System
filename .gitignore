@@ -1,0 +1,13 @@
+.env
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.runtime/
+sas.log
+sas-error.log
+*.log
+.DS_Store
+.idea/
+.vscode/
+
