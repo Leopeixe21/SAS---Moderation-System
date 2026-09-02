@@ -40,6 +40,7 @@ THRESHOLD = int(os.environ.get("DETECTION_THRESHOLD", "6"))
 LOG_CHANNEL_ID = int(os.environ["LOG_CHANNEL_ID"]) if os.environ.get("LOG_CHANNEL_ID") else None
 MAX_IMAGE_BYTES = int(os.environ.get("MAX_IMAGE_BYTES", str(8 * 1024 * 1024)))
 DATABASE_PATH = Path(os.environ.get("DATABASE_PATH", Path(__file__).parent / "data" / "sas.db"))
+EMBED_FOOTER = "SAS • Sistema de Moderação"
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -96,7 +97,8 @@ async def report(
     if isinstance(channel, discord.abc.Messageable):
         proof_filename = f"prova-mensagem-{message.id}.png"
         proof = discord.File(io.BytesIO(proof_image), filename=proof_filename)
-        embed = discord.Embed(description=content, colour=discord.Colour.red())
+        embed = discord.Embed(description=content, colour=discord.Colour.red(), timestamp=discord.utils.utcnow())
+        embed.set_footer(text=EMBED_FOOTER)
         embed.set_image(url=f"attachment://{proof_filename}")
         try:
             await channel.send(
@@ -167,7 +169,7 @@ async def moderate(
         dm_embed.add_field(name="Duração", value=f"`{TIMEOUT_DAYS} {day_label}`", inline=False)
         dm_embed.add_field(name="Motivo", value="Discord hackeado.", inline=False)
         dm_embed.set_image(url=f"attachment://{dm_filename}")
-        dm_embed.set_footer(text="SAS — Sistema de moderação")
+        dm_embed.set_footer(text=EMBED_FOOTER)
         try:
             await member.send(embed=dm_embed, file=dm_proof)
         except (discord.Forbidden, discord.HTTPException) as exc:
@@ -189,7 +191,7 @@ async def notify_timeout_removed(member: discord.Member) -> None:
         colour=discord.Colour.green(),
         timestamp=discord.utils.utcnow(),
     )
-    embed.set_footer(text="SAS — Sistema de moderação")
+    embed.set_footer(text=EMBED_FOOTER)
     try:
         await member.send(embed=embed)
     except (discord.Forbidden, discord.HTTPException) as exc:
@@ -237,7 +239,7 @@ async def notify_manual_timeout(member: discord.Member, reason: str, duration: s
     )
     embed.add_field(name="Duração", value=f"`{duration}`", inline=False)
     embed.add_field(name="Motivo", value=discord.utils.escape_markdown(reason)[:1024], inline=False)
-    embed.set_footer(text="SAS — Sistema de moderação")
+    embed.set_footer(text=EMBED_FOOTER)
     try:
         await member.send(embed=embed)
     except (discord.Forbidden, discord.HTTPException) as exc:
@@ -341,7 +343,8 @@ async def log_manual_timeout(
     )
     filename = f"prova-historico-{member.id}.png"
     proof = discord.File(io.BytesIO(proof_image), filename=filename)
-    embed = discord.Embed(description=content, colour=discord.Colour.red())
+    embed = discord.Embed(description=content, colour=discord.Colour.red(), timestamp=discord.utils.utcnow())
+    embed.set_footer(text=EMBED_FOOTER)
     embed.set_image(url=f"attachment://{filename}")
     try:
         await channel.send(
