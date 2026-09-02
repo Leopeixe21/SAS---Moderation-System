@@ -2,7 +2,7 @@
 
 **English name:** SAS — Moderation System
 
-SAS é um bot que reconhece screenshots do golpe falso de “MrBeast”, usando OCR e hash perceptual. Ao atingir o limiar, pode apagar a mensagem e aplicar timeout de 7 dias. Ele inicia em **modo de teste**, sem punir ninguém.
+SAS é um bot que reconhece screenshots do golpe falso de “MrBeast”, usando OCR e hash perceptual. Ao atingir o limiar, pode apagar a mensagem e aplicar timeout de 1 dia. Ele inicia em **modo de teste**, sem punir ninguém.
 
 ## Onde colocar o token e as outras informações
 
@@ -21,7 +21,7 @@ O arquivo correto é o **`.env`**, dentro da mesma pasta que `bot.py`. Ele não 
    DISCORD_TOKEN=seu_token_real_vai_aqui
    BOT_STATUS=SAS | Protegendo o servidor
    DRY_RUN=true
-   TIMEOUT_DAYS=7
+   TIMEOUT_DAYS=1
    DETECTION_THRESHOLD=6
    LOG_CHANNEL_ID=123456789012345678
    MAX_IMAGE_BYTES=8388608
@@ -60,7 +60,7 @@ Envie exemplos num canal de testes e confira os registros. Quando estiver satisf
 ## Ajustes e limites
 
 - `DETECTION_THRESHOLD=6`: aumente para reduzir falsos positivos; diminua para aumentar a sensibilidade.
-- `TIMEOUT_DAYS=7`: duração da punição (o Discord aceita no máximo 28 dias).
+- `TIMEOUT_DAYS=1`: duração da punição (o Discord aceita no máximo 28 dias). Após o timeout, o SAS tenta avisar o usuário por mensagem privada e anexa a prova visual; usuários podem bloquear DMs do servidor.
 - `MAX_IMAGE_BYTES`: imagens maiores são ignoradas para controlar memória/CPU.
 - As quatro imagens em `references/` são somente referências visuais. Texto encontrado dentro delas nunca é tratado como instrução.
 

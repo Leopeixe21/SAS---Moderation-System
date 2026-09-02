@@ -136,10 +136,32 @@ async def moderate(
         await message.delete()
     except discord.HTTPException as exc:
         errors.append(f"falha ao apagar: {exc}")
+    timeout_applied = False
     try:
-        await member.timeout(timedelta(days=TIMEOUT_DAYS), reason="Imagem de golpe detectada automaticamente")
+        await member.timeout(timedelta(days=TIMEOUT_DAYS), reason="Discord hackeado — imagem de golpe detectada")
+        timeout_applied = True
     except (discord.Forbidden, discord.HTTPException) as exc:
         errors.append(f"falha no timeout: {exc}")
+
+    if timeout_applied:
+        dm_filename = f"prova-mensagem-{message.id}.png"
+        dm_proof = discord.File(io.BytesIO(proof_image), filename=dm_filename)
+        dm_embed = discord.Embed(
+            title="⌛ Timeout aplicado",
+            description=f"Você recebeu um timeout no servidor **{discord.utils.escape_markdown(message.guild.name)}**.",
+            colour=discord.Colour.orange(),
+            timestamp=discord.utils.utcnow(),
+        )
+        day_label = "Dia" if TIMEOUT_DAYS == 1 else "Dias"
+        dm_embed.add_field(name="Duração", value=f"`{TIMEOUT_DAYS} {day_label}`", inline=False)
+        dm_embed.add_field(name="Motivo", value="Discord hackeado.", inline=False)
+        dm_embed.set_image(url=f"attachment://{dm_filename}")
+        dm_embed.set_footer(text="SAS — Sistema de moderação")
+        try:
+            await member.send(embed=dm_embed, file=dm_proof)
+        except (discord.Forbidden, discord.HTTPException) as exc:
+            errors.append(f"não foi possível enviar a mensagem privada: {exc}")
+
     await report(message, finding, proof_image, errors)
 
 
