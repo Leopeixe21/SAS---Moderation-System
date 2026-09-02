@@ -44,6 +44,8 @@ intents.members = True
 client = discord.Client(intents=intents)
 detector = ScamImageDetector(Path(__file__).parent / "references", THRESHOLD)
 scan_slots = asyncio.Semaphore(2)
+timeout_tasks: dict[tuple[int, int], asyncio.Task[None]] = {}
+removal_notified: set[tuple[int, int]] = set()
 
 
 def is_image(attachment: discord.Attachment) -> bool:
@@ -166,6 +168,59 @@ async def moderate(
     await report(message, finding, proof_image, errors)
 
 
+async def notify_timeout_removed(member: discord.Member) -> None:
+    key = (member.guild.id, member.id)
+    if key in removal_notified:
+        return
+    removal_notified.add(key)
+    embed = discord.Embed(
+        title="✅ Timeout removido",
+        description=(
+            f"Seu timeout no servidor **{discord.utils.escape_markdown(member.guild.name)}** foi removido.\n"
+            "Você já pode voltar a participar normalmente."
+        ),
+        colour=discord.Colour.green(),
+        timestamp=discord.utils.utcnow(),
+    )
+    embed.set_footer(text="SAS — Sistema de moderação")
+    try:
+        await member.send(embed=embed)
+    except (discord.Forbidden, discord.HTTPException) as exc:
+        log.warning("Não foi possível avisar %s sobre a remoção do timeout: %s", member.id, exc)
+
+
+def schedule_timeout_expiry(member: discord.Member) -> None:
+    """Agenda uma verificação no vencimento, mesmo se o Gateway não emitir outro evento."""
+    until = member.timed_out_until
+    if until is None or until <= discord.utils.utcnow():
+        return
+
+    key = (member.guild.id, member.id)
+    removal_notified.discard(key)
+    previous = timeout_tasks.pop(key, None)
+    if previous and previous is not asyncio.current_task():
+        previous.cancel()
+
+    async def wait_and_check() -> None:
+        try:
+            delay = max(0.0, (until - discord.utils.utcnow()).total_seconds())
+            await asyncio.sleep(delay + 1.0)
+            fresh = await member.guild.fetch_member(member.id)
+            if fresh.is_timed_out():
+                schedule_timeout_expiry(fresh)
+                return
+            await notify_timeout_removed(fresh)
+        except asyncio.CancelledError:
+            raise
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+            log.warning("Não foi possível verificar o fim do timeout de %s: %s", member.id, exc)
+        finally:
+            if timeout_tasks.get(key) is asyncio.current_task():
+                timeout_tasks.pop(key, None)
+
+    timeout_tasks[key] = asyncio.create_task(wait_and_check(), name=f"timeout-expiry-{member.guild.id}-{member.id}")
+
+
 @client.event
 async def on_ready() -> None:
     await client.change_presence(activity=discord.CustomActivity(name=BOT_STATUS))
@@ -175,28 +230,26 @@ async def on_ready() -> None:
         DRY_RUN,
         len(detector.reference_hashes),
     )
+    # Reconstrói os agendamentos após uma reinicialização do bot.
+    for guild in client.guilds:
+        for member in guild.members:
+            if member.is_timed_out():
+                schedule_timeout_expiry(member)
 
 
 @client.event
 async def on_member_update(before: discord.Member, after: discord.Member) -> None:
     """Avisa por DM quando um timeout expira ou é removido manualmente."""
-    if not before.is_timed_out() or after.is_timed_out() or after.bot:
+    if after.bot:
         return
-
-    embed = discord.Embed(
-        title="✅ Timeout removido",
-        description=(
-            f"Seu timeout no servidor **{discord.utils.escape_markdown(after.guild.name)}** foi removido.\n"
-            "Você já pode voltar a participar normalmente."
-        ),
-        colour=discord.Colour.green(),
-        timestamp=discord.utils.utcnow(),
-    )
-    embed.set_footer(text="SAS — Sistema de moderação")
-    try:
-        await after.send(embed=embed)
-    except (discord.Forbidden, discord.HTTPException) as exc:
-        log.warning("Não foi possível avisar %s sobre a remoção do timeout: %s", after.id, exc)
+    key = (after.guild.id, after.id)
+    if before.is_timed_out() and not after.is_timed_out():
+        task = timeout_tasks.pop(key, None)
+        if task:
+            task.cancel()
+        await notify_timeout_removed(after)
+    elif after.is_timed_out() and before.timed_out_until != after.timed_out_until:
+        schedule_timeout_expiry(after)
 
 
 @client.event
@@ -227,6 +280,7 @@ async def on_message(message: discord.Message) -> None:
             return
 
 
-if not TOKEN:
-    raise SystemExit("Defina DISCORD_TOKEN no arquivo .env")
-client.run(TOKEN, log_handler=None)
+if __name__ == "__main__":
+    if not TOKEN:
+        raise SystemExit("Defina DISCORD_TOKEN no arquivo .env")
+    client.run(TOKEN, log_handler=None)
