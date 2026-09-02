@@ -43,6 +43,11 @@ LOG_CHANNEL_ID = int(os.environ["LOG_CHANNEL_ID"]) if os.environ.get("LOG_CHANNE
 MAX_IMAGE_BYTES = int(os.environ.get("MAX_IMAGE_BYTES", str(8 * 1024 * 1024)))
 DATABASE_PATH = Path(os.environ.get("DATABASE_PATH", Path(__file__).parent / "data" / "sas.db"))
 EMBED_FOOTER = "SAS • Sistema de Moderação"
+AUTOMATED_TIMEOUT_REASON = (
+    f"Discord hackeado, timeout preventivo de {TIMEOUT_DAYS} "
+    f"{'dia' if TIMEOUT_DAYS == 1 else 'dias'}. "
+    "Reincidências causarão timeouts de maior duração."
+)
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -77,7 +82,7 @@ async def report(
         f"**Nome:** {discord.utils.escape_markdown(member.display_name)} <@{member.id}>\n"
         f"**ID:** {member.id}\n"
         f"**Tempo:** {TIMEOUT_DAYS} {day_label}\n"
-        f"**Motivo:** Discord hackeado.\n"
+        f"**Motivo:** {AUTOMATED_TIMEOUT_REASON}\n"
         f"**Sinais:** {signals}.\n"
         f"**Provas:** Em anexo"
     )
@@ -152,7 +157,7 @@ async def moderate(
     expected_timeout_until = discord.utils.utcnow() + timedelta(days=TIMEOUT_DAYS)
     sas_timeout_targets[timeout_key] = expected_timeout_until
     try:
-        await member.timeout(timedelta(days=TIMEOUT_DAYS), reason="Discord hackeado — imagem de golpe detectada")
+        await member.timeout(timedelta(days=TIMEOUT_DAYS), reason=AUTOMATED_TIMEOUT_REASON)
         timeout_applied = True
     except (discord.Forbidden, discord.HTTPException) as exc:
         sas_timeout_targets.pop(timeout_key, None)
@@ -177,7 +182,7 @@ async def moderate(
         )
         day_label = "Dia" if TIMEOUT_DAYS == 1 else "Dias"
         dm_embed.add_field(name="Duração", value=f"`{TIMEOUT_DAYS} {day_label}`", inline=False)
-        dm_embed.add_field(name="Motivo", value="Discord hackeado.", inline=False)
+        dm_embed.add_field(name="Motivo", value=AUTOMATED_TIMEOUT_REASON, inline=False)
         dm_embed.set_image(url=f"attachment://{dm_filename}")
         dm_embed.set_footer(text=EMBED_FOOTER)
         try:
