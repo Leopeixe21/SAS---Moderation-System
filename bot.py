@@ -13,6 +13,7 @@ import discord
 
 from detector import Detection, ScamImageDetector
 from proof_renderer import render_history_proof, render_message_proof
+from timeout_store import TimeoutStore
 
 
 def load_env_file(path: Path) -> None:
@@ -34,19 +35,20 @@ log = logging.getLogger("SAS")
 TOKEN = os.environ.get("DISCORD_TOKEN", "")
 BOT_STATUS = os.environ.get("BOT_STATUS", "SAS | Protegendo o servidor")
 DRY_RUN = os.environ.get("DRY_RUN", "true").lower() in {"1", "true", "yes", "sim"}
-TIMEOUT_DAYS = int(os.environ.get("TIMEOUT_DAYS", "7"))
+TIMEOUT_DAYS = int(os.environ.get("TIMEOUT_DAYS", "1"))
 THRESHOLD = int(os.environ.get("DETECTION_THRESHOLD", "6"))
 LOG_CHANNEL_ID = int(os.environ["LOG_CHANNEL_ID"]) if os.environ.get("LOG_CHANNEL_ID") else None
 MAX_IMAGE_BYTES = int(os.environ.get("MAX_IMAGE_BYTES", str(8 * 1024 * 1024)))
+DATABASE_PATH = Path(os.environ.get("DATABASE_PATH", Path(__file__).parent / "data" / "sas.db"))
 
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 client = discord.Client(intents=intents)
 detector = ScamImageDetector(Path(__file__).parent / "references", THRESHOLD)
+timeout_store = TimeoutStore(DATABASE_PATH)
 scan_slots = asyncio.Semaphore(2)
 timeout_tasks: dict[tuple[int, int], asyncio.Task[None]] = {}
-removal_notified: set[tuple[int, int]] = set()
 sas_timeout_targets: dict[tuple[int, int], datetime] = {}
 
 
@@ -147,6 +149,7 @@ async def moderate(
     try:
         await member.timeout(timedelta(days=TIMEOUT_DAYS), reason="Discord hackeado — imagem de golpe detectada")
         timeout_applied = True
+        timeout_store.save(member.guild.id, member.id, sas_timeout_targets[timeout_key], "sas")
     except (discord.Forbidden, discord.HTTPException) as exc:
         sas_timeout_targets.pop(timeout_key, None)
         errors.append(f"falha no timeout: {exc}")
@@ -175,9 +178,8 @@ async def moderate(
 
 async def notify_timeout_removed(member: discord.Member) -> None:
     key = (member.guild.id, member.id)
-    if key in removal_notified:
+    if not timeout_store.complete(*key):
         return
-    removal_notified.add(key)
     embed = discord.Embed(
         title="✅ Timeout removido",
         description=(
@@ -351,14 +353,14 @@ async def log_manual_timeout(
         log.error("Falha ao enviar o log do timeout manual de %s: %s", member.id, exc)
 
 
-def schedule_timeout_expiry(member: discord.Member) -> None:
+def schedule_timeout_expiry(member: discord.Member, source: str = "manual") -> None:
     """Agenda uma verificação no vencimento, mesmo se o Gateway não emitir outro evento."""
     until = member.timed_out_until
     if until is None or until <= discord.utils.utcnow():
         return
 
     key = (member.guild.id, member.id)
-    removal_notified.discard(key)
+    timeout_store.save(member.guild.id, member.id, until, source)
     previous = timeout_tasks.pop(key, None)
     if previous and previous is not asyncio.current_task():
         previous.cancel()
@@ -392,11 +394,31 @@ async def on_ready() -> None:
         DRY_RUN,
         len(detector.reference_hashes),
     )
-    # Reconstrói os agendamentos após uma reinicialização do bot.
+    # Recupera inclusive avisos que venceram enquanto o bot estava desligado.
+    restored_keys = set()
+    for pending in timeout_store.pending():
+        guild = client.get_guild(pending.guild_id)
+        if guild is None:
+            continue
+        try:
+            member = await guild.fetch_member(pending.user_id)
+        except discord.NotFound:
+            timeout_store.complete(pending.guild_id, pending.user_id)
+            continue
+        except (discord.Forbidden, discord.HTTPException) as exc:
+            log.warning("Não foi possível recuperar o timeout de %s: %s", pending.user_id, exc)
+            continue
+        restored_keys.add((pending.guild_id, pending.user_id))
+        if member.is_timed_out():
+            schedule_timeout_expiry(member, pending.source)
+        else:
+            await notify_timeout_removed(member)
+
+    # Também importa timeouts preexistentes, criados antes do banco local.
     for guild in client.guilds:
         for member in guild.members:
-            if member.is_timed_out():
-                schedule_timeout_expiry(member)
+            if member.is_timed_out() and (guild.id, member.id) not in restored_keys:
+                schedule_timeout_expiry(member, "manual")
 
 
 @client.event
@@ -406,18 +428,21 @@ async def on_member_update(before: discord.Member, after: discord.Member) -> Non
         return
     key = (after.guild.id, after.id)
     if before.is_timed_out() and not after.is_timed_out():
+        if not timeout_store.is_pending(*key) and before.timed_out_until is not None:
+            timeout_store.save(after.guild.id, after.id, before.timed_out_until, "manual")
         sas_timeout_targets.pop(key, None)
         task = timeout_tasks.pop(key, None)
         if task:
             task.cancel()
         await notify_timeout_removed(after)
     elif after.is_timed_out() and before.timed_out_until != after.timed_out_until:
-        schedule_timeout_expiry(after)
         expected_until = sas_timeout_targets.pop(key, None)
         if expected_until is not None:
             difference = abs((after.timed_out_until - expected_until).total_seconds())
             if difference <= 10:
+                schedule_timeout_expiry(after, "sas")
                 return
+        schedule_timeout_expiry(after, "manual")
         duration = format_timeout_duration(after.timed_out_until)
         reason, moderator, moderator_id = await get_manual_timeout_details(after)
         await notify_manual_timeout(after, reason, duration)

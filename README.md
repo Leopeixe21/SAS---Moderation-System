@@ -4,6 +4,8 @@
 
 SAS é um bot que reconhece screenshots do golpe falso de “MrBeast”, usando OCR e hash perceptual. Ao atingir o limiar, pode apagar a mensagem e aplicar timeout de 1 dia. Ele inicia em **modo de teste**, sem punir ninguém.
 
+Na primeira inicialização, o SAS cria automaticamente o banco SQLite em `data/sas.db`. Não é necessário instalar ou configurar um servidor de banco de dados. Os timeouts pendentes ficam salvos e são recuperados depois de uma reinicialização; se um deles terminar enquanto o bot estiver desligado, o aviso será enviado quando o bot voltar.
+
 ## Onde colocar o token e as outras informações
 
 O arquivo correto é o **`.env`**, dentro da mesma pasta que `bot.py`. Ele não existe inicialmente para evitar que um token real seja distribuído por acidente.
@@ -70,6 +72,7 @@ Envie exemplos num canal de testes e confira os registros. Quando estiver satisf
 - `DETECTION_THRESHOLD=6`: aumente para reduzir falsos positivos; diminua para aumentar a sensibilidade.
 - `TIMEOUT_DAYS=1`: duração da punição (o Discord aceita no máximo 28 dias). O SAS envia uma DM laranja com a prova após aplicar o timeout por hacking e uma DM verde quando ele expira ou é removido. Timeouts manuais geram uma DM laranja sem revelar o moderador e sem prova; o canal de logs recebe o moderador e uma prova visual reconstruída com as últimas 20 mensagens acessíveis do usuário. Usuários podem bloquear DMs do servidor.
 - `MAX_IMAGE_BYTES`: imagens maiores são ignoradas para controlar memória/CPU.
+- `DATABASE_PATH`: caminho opcional do SQLite. Se não for informado, será usado `data/sas.db`. Com Docker Compose, essa pasta já é preservada automaticamente.
 - As quatro imagens em `references/` são somente referências visuais. Texto encontrado dentro delas nunca é tratado como instrução.
 
 Nenhum detector visual é perfeito. Recomenda-se observar o modo de teste e manter um canal de recurso para usuários legítimos ou contas comprometidas.
