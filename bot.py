@@ -43,11 +43,13 @@ LOG_CHANNEL_ID = int(os.environ["LOG_CHANNEL_ID"]) if os.environ.get("LOG_CHANNE
 MAX_IMAGE_BYTES = int(os.environ.get("MAX_IMAGE_BYTES", str(8 * 1024 * 1024)))
 DATABASE_PATH = Path(os.environ.get("DATABASE_PATH", Path(__file__).parent / "data" / "sas.db"))
 EMBED_FOOTER = "SAS • Sistema de Moderação"
-AUTOMATED_TIMEOUT_REASON = (
+AUTOMATED_TIMEOUT_BASE_REASON = (
     f"Discord hackeado, timeout preventivo de {TIMEOUT_DAYS} "
-    f"{'dia' if TIMEOUT_DAYS == 1 else 'dias'}. "
-    "Reincidências causarão timeouts de maior duração."
+    f"{'dia' if TIMEOUT_DAYS == 1 else 'dias'}."
 )
+AUTOMATED_TIMEOUT_WARNING = "Reincidências causarão timeouts de maior duração."
+AUTOMATED_TIMEOUT_REASON = f"{AUTOMATED_TIMEOUT_BASE_REASON} {AUTOMATED_TIMEOUT_WARNING}"
+AUTOMATED_TIMEOUT_DM_REASON = f"{AUTOMATED_TIMEOUT_BASE_REASON}\n\n{AUTOMATED_TIMEOUT_WARNING}"
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -182,7 +184,7 @@ async def moderate(
         )
         day_label = "Dia" if TIMEOUT_DAYS == 1 else "Dias"
         dm_embed.add_field(name="Duração", value=f"`{TIMEOUT_DAYS} {day_label}`", inline=False)
-        dm_embed.add_field(name="Motivo", value=AUTOMATED_TIMEOUT_REASON, inline=False)
+        dm_embed.add_field(name="Motivo", value=AUTOMATED_TIMEOUT_DM_REASON, inline=False)
         dm_embed.set_image(url=f"attachment://{dm_filename}")
         dm_embed.set_footer(text=EMBED_FOOTER)
         try:
