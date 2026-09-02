@@ -12,7 +12,7 @@ import aiohttp
 import discord
 
 from detector import Detection, ScamImageDetector
-from proof_renderer import render_message_proof
+from proof_renderer import render_history_proof, render_message_proof
 
 
 def load_env_file(path: Path) -> None:
@@ -206,7 +206,7 @@ def format_timeout_duration(until) -> str:
     return f"{value} {'Minuto' if value == 1 else 'Minutos'}"
 
 
-async def get_manual_timeout_details(member: discord.Member) -> tuple[str, str]:
+async def get_manual_timeout_details(member: discord.Member) -> tuple[str, str, int | None]:
     """Obtém motivo e moderador do Audit Log quando o bot tem permissão."""
     await asyncio.sleep(1.0)  # dá tempo para a entrada aparecer no Audit Log
     try:
@@ -217,31 +217,138 @@ async def get_manual_timeout_details(member: discord.Member) -> tuple[str, str]:
             if target_id == member.id and age <= 30 and changed_timeout is not None:
                 reason = entry.reason or "Não informado."
                 moderator = getattr(entry.user, "display_name", None) or getattr(entry.user, "name", None) or "Desconhecido"
-                return reason, moderator
+                return reason, moderator, getattr(entry.user, "id", None)
     except (discord.Forbidden, discord.HTTPException) as exc:
         log.warning("Sem acesso ao Audit Log para obter o motivo do timeout de %s: %s", member.id, exc)
-    return "Não informado.", "Desconhecido"
+    return "Não informado.", "Desconhecido", None
 
 
-async def notify_manual_timeout(member: discord.Member) -> None:
+async def notify_manual_timeout(member: discord.Member, reason: str, duration: str) -> None:
     until = member.timed_out_until
     if until is None:
         return
-    reason, moderator = await get_manual_timeout_details(member)
     embed = discord.Embed(
         title="⌛ Timeout aplicado",
         description=f"Você recebeu um timeout no servidor **{discord.utils.escape_markdown(member.guild.name)}**.",
         colour=discord.Colour.green(),
         timestamp=discord.utils.utcnow(),
     )
-    embed.add_field(name="Duração", value=f"`{format_timeout_duration(until)}`", inline=False)
+    embed.add_field(name="Duração", value=f"`{duration}`", inline=False)
     embed.add_field(name="Motivo", value=discord.utils.escape_markdown(reason)[:1024], inline=False)
-    embed.add_field(name="Aplicado por", value=discord.utils.escape_markdown(moderator), inline=False)
     embed.set_footer(text="SAS — Sistema de moderação")
     try:
         await member.send(embed=embed)
     except (discord.Forbidden, discord.HTTPException) as exc:
         log.warning("Não foi possível avisar %s sobre o timeout manual: %s", member.id, exc)
+
+
+async def collect_recent_member_messages(member: discord.Member, limit: int = 20) -> list[dict]:
+    """Combina mensagens recentes do usuário em todos os canais de texto acessíveis."""
+    guild_me = member.guild.me
+    semaphore = asyncio.Semaphore(4)
+
+    async def scan_channel(channel: discord.TextChannel) -> list[discord.Message]:
+        if guild_me is None:
+            return []
+        permissions = channel.permissions_for(guild_me)
+        if not permissions.view_channel or not permissions.read_message_history:
+            return []
+        found = []
+        try:
+            async with semaphore:
+                async for candidate in channel.history(limit=200):
+                    if candidate.author.id == member.id:
+                        found.append(candidate)
+                        if len(found) >= limit:
+                            break
+        except (discord.Forbidden, discord.HTTPException) as exc:
+            log.warning("Não foi possível consultar o histórico do canal %s: %s", channel.id, exc)
+        return found
+
+    batches = await asyncio.gather(*(scan_channel(channel) for channel in member.guild.text_channels))
+    candidates = [message for batch in batches for message in batch]
+    selected = sorted(candidates, key=lambda item: item.created_at, reverse=True)[:limit]
+    selected.reverse()
+
+    snapshots = []
+    remaining_bytes = 20 * 1024 * 1024
+    for source in selected:
+        attachments = []
+        for attachment in source.attachments[:4]:
+            if not is_image(attachment) or attachment.size > MAX_IMAGE_BYTES or attachment.size > remaining_bytes:
+                continue
+            try:
+                payload = await attachment.read(use_cached=True)
+                attachments.append((attachment.filename, payload))
+                remaining_bytes -= len(payload)
+            except (discord.HTTPException, aiohttp.ClientError, asyncio.TimeoutError):
+                continue
+        snapshots.append(
+            {
+                "content": source.content,
+                "created_at": source.created_at,
+                "channel_name": getattr(source.channel, "name", str(source.channel.id)),
+                "channel_id": source.channel.id,
+                "message_id": source.id,
+                "evidence": attachments,
+            }
+        )
+    return snapshots
+
+
+async def log_manual_timeout(
+    member: discord.Member,
+    *,
+    reason: str,
+    duration: str,
+    moderator: str,
+    moderator_id: int | None,
+) -> None:
+    if not LOG_CHANNEL_ID:
+        return
+    channel = client.get_channel(LOG_CHANNEL_ID)
+    if not isinstance(channel, discord.abc.Messageable):
+        return
+
+    try:
+        avatar = await member.display_avatar.with_size(128).read()
+    except discord.HTTPException:
+        avatar = None
+    snapshots = await collect_recent_member_messages(member, limit=20)
+    proof_image = await asyncio.to_thread(
+        render_history_proof,
+        display_name=member.display_name,
+        username=member.name,
+        avatar=avatar,
+        guild_name=member.guild.name,
+        guild_id=member.guild.id,
+        user_id=member.id,
+        messages=snapshots,
+    )
+
+    moderator_text = discord.utils.escape_markdown(moderator)
+    if moderator_id is not None:
+        moderator_text += f" (`{moderator_id}`)"
+    content = (
+        f"**Nome:** {discord.utils.escape_markdown(member.display_name)} <@{member.id}>\n"
+        f"**ID:** {member.id}\n"
+        f"**Tempo:** {duration}\n"
+        f"**Motivo:** {discord.utils.escape_markdown(reason)}\n"
+        f"**Aplicado por:** {moderator_text}\n"
+        f"**Provas:** Últimas {len(snapshots)} mensagens acessíveis em anexo"
+    )
+    filename = f"prova-historico-{member.id}.png"
+    proof = discord.File(io.BytesIO(proof_image), filename=filename)
+    embed = discord.Embed(description=content, colour=discord.Colour.red())
+    embed.set_image(url=f"attachment://{filename}")
+    try:
+        await channel.send(
+            embed=embed,
+            file=proof,
+            allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
+        )
+    except discord.HTTPException as exc:
+        log.error("Falha ao enviar o log do timeout manual de %s: %s", member.id, exc)
 
 
 def schedule_timeout_expiry(member: discord.Member) -> None:
@@ -311,7 +418,16 @@ async def on_member_update(before: discord.Member, after: discord.Member) -> Non
             difference = abs((after.timed_out_until - expected_until).total_seconds())
             if difference <= 10:
                 return
-        await notify_manual_timeout(after)
+        duration = format_timeout_duration(after.timed_out_until)
+        reason, moderator, moderator_id = await get_manual_timeout_details(after)
+        await notify_manual_timeout(after, reason, duration)
+        await log_manual_timeout(
+            after,
+            reason=reason,
+            duration=duration,
+            moderator=moderator,
+            moderator_id=moderator_id,
+        )
 
 
 @client.event

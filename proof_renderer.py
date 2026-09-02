@@ -149,3 +149,105 @@ def render_message_proof(
     output = io.BytesIO()
     canvas.save(output, format="PNG", optimize=True)
     return output.getvalue()
+
+
+def render_history_proof(
+    *,
+    display_name: str,
+    username: str,
+    avatar: bytes | None,
+    guild_name: str,
+    guild_id: int,
+    user_id: int,
+    messages: list[dict],
+) -> bytes:
+    """Reconstrói até 20 mensagens recentes no estilo visual do chat do Discord."""
+    title_font = _font(20, bold=True)
+    body_font = _font(18)
+    small_font = _font(14)
+    probe = Image.new("RGB", (WIDTH, 100), BG)
+    probe_draw = ImageDraw.Draw(probe)
+    text_x = PADDING + 64
+    available_width = WIDTH - text_x - PADDING
+
+    avatar_image = None
+    avatar_mask = None
+    if avatar:
+        try:
+            with Image.open(io.BytesIO(avatar)) as source:
+                avatar_image = ImageOps.fit(source.convert("RGB"), (46, 46))
+            avatar_mask = Image.new("L", (46, 46), 0)
+            ImageDraw.Draw(avatar_mask).ellipse((0, 0, 45, 45), fill=255)
+        except OSError:
+            avatar_image = None
+
+    prepared = []
+    total_height = PADDING
+    for message in messages:
+        lines = _wrap(probe_draw, message.get("content", ""), body_font, available_width)
+        pictures = _load_images(message.get("evidence", []))[:4]
+        if not lines and not pictures:
+            lines = ["(mensagem sem texto ou mídia acessível)"]
+        columns = 1 if len(pictures) == 1 else 2
+        cell_width = available_width if columns == 1 else (available_width - 8) // 2
+        cell_height = 260 if columns == 1 else 190
+        rows = (len(pictures) + columns - 1) // columns
+        gallery_height = rows * cell_height + max(0, rows - 1) * 8 if pictures else 0
+        block_height = 62 + len(lines) * 24 + (10 if lines and pictures else 0) + gallery_height + 34
+        prepared.append((message, lines, pictures, columns, cell_width, cell_height, gallery_height, block_height))
+        total_height += block_height
+
+    if not prepared:
+        total_height += 150
+    total_height += 82
+    canvas = Image.new("RGB", (WIDTH, total_height), BG)
+    draw = ImageDraw.Draw(canvas)
+    y = PADDING
+
+    if not prepared:
+        draw.text((PADDING, y), "Nenhuma mensagem acessível foi encontrada.", font=title_font, fill=TEXT)
+        y += 80
+
+    for message, lines, pictures, columns, cell_width, cell_height, gallery_height, block_height in prepared:
+        if avatar_image is not None and avatar_mask is not None:
+            canvas.paste(avatar_image, (PADDING, y), avatar_mask)
+        else:
+            draw.ellipse((PADDING, y, PADDING + 46, y + 46), fill="#5865f2")
+
+        draw.text((text_x, y), display_name, font=title_font, fill=TEXT)
+        name_width = draw.textbbox((0, 0), display_name, font=title_font)[2]
+        timestamp = message["created_at"].astimezone().strftime("%d/%m/%Y %H:%M")
+        draw.text((text_x + name_width + 10, y + 4), f"@{username}  •  {timestamp}", font=small_font, fill=MUTED)
+        draw.text(
+            (text_x, y + 28),
+            f"#{message['channel_name']}  •  mensagem {message['message_id']}",
+            font=small_font,
+            fill=LINK,
+        )
+
+        content_y = y + 55
+        for line in lines:
+            draw.text((text_x, content_y), line, font=body_font, fill=TEXT)
+            content_y += 24
+        if lines and pictures:
+            content_y += 10
+
+        for index, picture in enumerate(pictures):
+            row, column = divmod(index, columns)
+            x = text_x + column * (cell_width + 8)
+            image_y = content_y + row * (cell_height + 8)
+            fitted = ImageOps.contain(picture, (cell_width, cell_height))
+            tile = Image.new("RGB", (cell_width, cell_height), PANEL)
+            tile.paste(fitted, ((cell_width - fitted.width) // 2, (cell_height - fitted.height) // 2))
+            canvas.paste(tile, (x, image_y))
+
+        y += block_height
+        draw.line((text_x, y - 15, WIDTH - PADDING, y - 15), fill="#3f4147", width=1)
+
+    footer = f"Últimas {len(prepared)} mensagens acessíveis • usuário {user_id} • servidor {guild_name} ({guild_id})"
+    draw.text((PADDING, total_height - 58), footer, font=small_font, fill=MUTED)
+    draw.text((PADDING, total_height - 32), "SAS • Registro de moderação", font=small_font, fill=MUTED)
+
+    output = io.BytesIO()
+    canvas.save(output, format="PNG", optimize=True)
+    return output.getvalue()

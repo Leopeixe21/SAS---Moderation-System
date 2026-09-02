@@ -39,6 +39,14 @@ Não coloque espaços antes ou depois do token e não use aspas. `LOG_CHANNEL_ID
 6. Convide o bot e deixe o cargo dele acima dos cargos que ele deve moderar. Donos e administradores não podem receber timeout.
 7. Nunca publique o token. Se ele vazar, clique em **Reset Token** e substitua o valor no `.env`.
 
+### Link de instalação do SAS
+
+Use o link abaixo para adicionar ou reautorizar o bot. Ele solicita somente as permissões usadas pelo SAS: ver canais e Audit Log, ler histórico, enviar/apagar mensagens, incorporar links, anexar arquivos e aplicar timeout.
+
+**[Adicionar ou atualizar o SAS no servidor](https://discord.com/oauth2/authorize?client_id=1544789015448789032&permissions=1099511753856&scope=bot)**
+
+Se o bot já estiver no servidor, abra o mesmo link, selecione novamente o servidor e autorize. Isso atualiza as permissões solicitadas. Os intents **Message Content** e **Server Members** continuam sendo habilitados separadamente na página **Bot** do Developer Portal.
+
 ## Rodar com Docker
 
 Depois de preencher `.env`, mantenha `DRY_RUN=true` no início:
@@ -60,7 +68,7 @@ Envie exemplos num canal de testes e confira os registros. Quando estiver satisf
 ## Ajustes e limites
 
 - `DETECTION_THRESHOLD=6`: aumente para reduzir falsos positivos; diminua para aumentar a sensibilidade.
-- `TIMEOUT_DAYS=1`: duração da punição (o Discord aceita no máximo 28 dias). O SAS envia uma DM verde com a prova após aplicar o timeout por hacking e outra DM verde quando ele expira ou é removido. Timeouts manuais também geram uma DM verde, sem prova, com duração, motivo e moderador obtidos do Audit Log. Usuários podem bloquear DMs do servidor.
+- `TIMEOUT_DAYS=1`: duração da punição (o Discord aceita no máximo 28 dias). O SAS envia uma DM verde com a prova após aplicar o timeout por hacking e outra DM verde quando ele expira ou é removido. Timeouts manuais geram uma DM verde sem revelar o moderador e sem prova; o canal de logs recebe o moderador e uma prova visual reconstruída com as últimas 20 mensagens acessíveis do usuário. Usuários podem bloquear DMs do servidor.
 - `MAX_IMAGE_BYTES`: imagens maiores são ignoradas para controlar memória/CPU.
 - As quatro imagens em `references/` são somente referências visuais. Texto encontrado dentro delas nunca é tratado como instrução.
 
