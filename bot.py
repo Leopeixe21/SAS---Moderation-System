@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import math
 import os
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import aiohttp
@@ -46,6 +47,7 @@ detector = ScamImageDetector(Path(__file__).parent / "references", THRESHOLD)
 scan_slots = asyncio.Semaphore(2)
 timeout_tasks: dict[tuple[int, int], asyncio.Task[None]] = {}
 removal_notified: set[tuple[int, int]] = set()
+sas_timeout_targets: dict[tuple[int, int], datetime] = {}
 
 
 def is_image(attachment: discord.Attachment) -> bool:
@@ -140,10 +142,13 @@ async def moderate(
     except discord.HTTPException as exc:
         errors.append(f"falha ao apagar: {exc}")
     timeout_applied = False
+    timeout_key = (member.guild.id, member.id)
+    sas_timeout_targets[timeout_key] = discord.utils.utcnow() + timedelta(days=TIMEOUT_DAYS)
     try:
         await member.timeout(timedelta(days=TIMEOUT_DAYS), reason="Discord hackeado — imagem de golpe detectada")
         timeout_applied = True
     except (discord.Forbidden, discord.HTTPException) as exc:
+        sas_timeout_targets.pop(timeout_key, None)
         errors.append(f"falha no timeout: {exc}")
 
     if timeout_applied:
@@ -187,6 +192,56 @@ async def notify_timeout_removed(member: discord.Member) -> None:
         await member.send(embed=embed)
     except (discord.Forbidden, discord.HTTPException) as exc:
         log.warning("Não foi possível avisar %s sobre a remoção do timeout: %s", member.id, exc)
+
+
+def format_timeout_duration(until) -> str:
+    seconds = max(1, math.ceil((until - discord.utils.utcnow()).total_seconds()))
+    if seconds >= 86400:
+        value = math.ceil(seconds / 86400)
+        return f"{value} {'Dia' if value == 1 else 'Dias'}"
+    if seconds >= 3600:
+        value = math.ceil(seconds / 3600)
+        return f"{value} {'Hora' if value == 1 else 'Horas'}"
+    value = math.ceil(seconds / 60)
+    return f"{value} {'Minuto' if value == 1 else 'Minutos'}"
+
+
+async def get_manual_timeout_details(member: discord.Member) -> tuple[str, str]:
+    """Obtém motivo e moderador do Audit Log quando o bot tem permissão."""
+    await asyncio.sleep(1.0)  # dá tempo para a entrada aparecer no Audit Log
+    try:
+        async for entry in member.guild.audit_logs(limit=8, action=discord.AuditLogAction.member_update):
+            target_id = getattr(entry.target, "id", None)
+            age = abs((discord.utils.utcnow() - entry.created_at).total_seconds())
+            changed_timeout = getattr(entry.after, "timed_out_until", None)
+            if target_id == member.id and age <= 30 and changed_timeout is not None:
+                reason = entry.reason or "Não informado."
+                moderator = getattr(entry.user, "display_name", None) or getattr(entry.user, "name", None) or "Desconhecido"
+                return reason, moderator
+    except (discord.Forbidden, discord.HTTPException) as exc:
+        log.warning("Sem acesso ao Audit Log para obter o motivo do timeout de %s: %s", member.id, exc)
+    return "Não informado.", "Desconhecido"
+
+
+async def notify_manual_timeout(member: discord.Member) -> None:
+    until = member.timed_out_until
+    if until is None:
+        return
+    reason, moderator = await get_manual_timeout_details(member)
+    embed = discord.Embed(
+        title="⌛ Timeout aplicado",
+        description=f"Você recebeu um timeout no servidor **{discord.utils.escape_markdown(member.guild.name)}**.",
+        colour=discord.Colour.green(),
+        timestamp=discord.utils.utcnow(),
+    )
+    embed.add_field(name="Duração", value=f"`{format_timeout_duration(until)}`", inline=False)
+    embed.add_field(name="Motivo", value=discord.utils.escape_markdown(reason)[:1024], inline=False)
+    embed.add_field(name="Aplicado por", value=discord.utils.escape_markdown(moderator), inline=False)
+    embed.set_footer(text="SAS — Sistema de moderação")
+    try:
+        await member.send(embed=embed)
+    except (discord.Forbidden, discord.HTTPException) as exc:
+        log.warning("Não foi possível avisar %s sobre o timeout manual: %s", member.id, exc)
 
 
 def schedule_timeout_expiry(member: discord.Member) -> None:
@@ -244,12 +299,19 @@ async def on_member_update(before: discord.Member, after: discord.Member) -> Non
         return
     key = (after.guild.id, after.id)
     if before.is_timed_out() and not after.is_timed_out():
+        sas_timeout_targets.pop(key, None)
         task = timeout_tasks.pop(key, None)
         if task:
             task.cancel()
         await notify_timeout_removed(after)
     elif after.is_timed_out() and before.timed_out_until != after.timed_out_until:
         schedule_timeout_expiry(after)
+        expected_until = sas_timeout_targets.pop(key, None)
+        if expected_until is not None:
+            difference = abs((after.timed_out_until - expected_until).total_seconds())
+            if difference <= 10:
+                return
+        await notify_manual_timeout(after)
 
 
 @client.event
