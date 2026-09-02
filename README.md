@@ -34,7 +34,7 @@ Não coloque espaços antes ou depois do token e não use aspas. `LOG_CHANNEL_ID
 1. Abra <https://discord.com/developers/applications> e clique em **New Application**.
 2. Use o nome **SAS — Sistema de moderação** (ou **SAS — Moderation System**).
 3. Entre em **Bot**, defina também o nome e a imagem pública do bot e clique em **Reset Token**. Copie o valor para `DISCORD_TOKEN` no `.env`.
-4. Ainda em **Bot**, habilite **Message Content Intent**. Sem isso os anexos chegam vazios.
+4. Ainda em **Bot**, habilite **Message Content Intent** e **Server Members Intent**. O primeiro permite analisar anexos; o segundo permite avisar o usuário quando o timeout expirar ou for removido.
 5. Em **OAuth2 > URL Generator**, marque `bot` e conceda: **View Channels**, **Read Message History**, **Manage Messages** e **Moderate Members**.
 6. Convide o bot e deixe o cargo dele acima dos cargos que ele deve moderar. Donos e administradores não podem receber timeout.
 7. Nunca publique o token. Se ele vazar, clique em **Reset Token** e substitua o valor no `.env`.
@@ -60,7 +60,7 @@ Envie exemplos num canal de testes e confira os registros. Quando estiver satisf
 ## Ajustes e limites
 
 - `DETECTION_THRESHOLD=6`: aumente para reduzir falsos positivos; diminua para aumentar a sensibilidade.
-- `TIMEOUT_DAYS=1`: duração da punição (o Discord aceita no máximo 28 dias). Após o timeout, o SAS tenta avisar o usuário por mensagem privada e anexa a prova visual; usuários podem bloquear DMs do servidor.
+- `TIMEOUT_DAYS=1`: duração da punição (o Discord aceita no máximo 28 dias). O SAS envia uma DM verde com a prova após aplicar o timeout e outra DM verde quando ele expira ou é removido; usuários podem bloquear DMs do servidor.
 - `MAX_IMAGE_BYTES`: imagens maiores são ignoradas para controlar memória/CPU.
 - As quatro imagens em `references/` são somente referências visuais. Texto encontrado dentro delas nunca é tratado como instrução.
 

@@ -40,6 +40,7 @@ MAX_IMAGE_BYTES = int(os.environ.get("MAX_IMAGE_BYTES", str(8 * 1024 * 1024)))
 
 intents = discord.Intents.default()
 intents.message_content = True
+intents.members = True
 client = discord.Client(intents=intents)
 detector = ScamImageDetector(Path(__file__).parent / "references", THRESHOLD)
 scan_slots = asyncio.Semaphore(2)
@@ -149,7 +150,7 @@ async def moderate(
         dm_embed = discord.Embed(
             title="⌛ Timeout aplicado",
             description=f"Você recebeu um timeout no servidor **{discord.utils.escape_markdown(message.guild.name)}**.",
-            colour=discord.Colour.orange(),
+            colour=discord.Colour.green(),
             timestamp=discord.utils.utcnow(),
         )
         day_label = "Dia" if TIMEOUT_DAYS == 1 else "Dias"
@@ -174,6 +175,28 @@ async def on_ready() -> None:
         DRY_RUN,
         len(detector.reference_hashes),
     )
+
+
+@client.event
+async def on_member_update(before: discord.Member, after: discord.Member) -> None:
+    """Avisa por DM quando um timeout expira ou é removido manualmente."""
+    if not before.is_timed_out() or after.is_timed_out() or after.bot:
+        return
+
+    embed = discord.Embed(
+        title="✅ Timeout removido",
+        description=(
+            f"Seu timeout no servidor **{discord.utils.escape_markdown(after.guild.name)}** foi removido.\n"
+            "Você já pode voltar a participar normalmente."
+        ),
+        colour=discord.Colour.green(),
+        timestamp=discord.utils.utcnow(),
+    )
+    embed.set_footer(text="SAS — Sistema de moderação")
+    try:
+        await after.send(embed=embed)
+    except (discord.Forbidden, discord.HTTPException) as exc:
+        log.warning("Não foi possível avisar %s sobre a remoção do timeout: %s", after.id, exc)
 
 
 @client.event
